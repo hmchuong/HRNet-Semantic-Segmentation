@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Copyright (c) Microsoft
 # Licensed under the MIT License.
-# Written by Ke Sun (sunk@mail.ustc.edu.cn)
+# Written by Ke Sun (sunk@mail.ustc.edu.cn), Jingyi Xie (hsfzxjy@gmail.com)
 # ------------------------------------------------------------------------------
 
 from __future__ import absolute_import
@@ -20,16 +20,173 @@ import torch._utils
 import torch.nn.functional as F
 
 from .bn_helper import BatchNorm2d, BatchNorm2d_class, relu_inplace
+from .pointrend import *
 
+ALIGN_CORNERS = True
 BN_MOMENTUM = 0.1
-ALIGN_CORNERS = None
-
 logger = logging.getLogger(__name__)
+
+class ModuleHelper:
+
+    @staticmethod
+    def BNReLU(num_features, bn_type=None, **kwargs):
+        return nn.Sequential(
+            BatchNorm2d(num_features, **kwargs),
+            nn.ReLU()
+        )
+
+    @staticmethod
+    def BatchNorm2d(*args, **kwargs):
+        return BatchNorm2d
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
+
+
+class SpatialGather_Module(nn.Module):
+    """
+        Aggregate the context features according to the initial 
+        predicted probability distribution.
+        Employ the soft-weighted method to aggregate the context.
+    """
+    def __init__(self, cls_num=0, scale=1):
+        super(SpatialGather_Module, self).__init__()
+        self.cls_num = cls_num
+        self.scale = scale
+
+    def forward(self, feats, probs):
+        batch_size, c, h, w = probs.size(0), probs.size(1), probs.size(2), probs.size(3)
+        probs = probs.view(batch_size, c, -1)
+        feats = feats.view(batch_size, feats.size(1), -1)
+        feats = feats.permute(0, 2, 1) # batch x hw x c 
+        probs = F.softmax(self.scale * probs, dim=2)# batch x k x hw
+        ocr_context = torch.matmul(probs, feats)\
+        .permute(0, 2, 1).unsqueeze(3)# batch x k x c
+        return ocr_context
+
+
+class _ObjectAttentionBlock(nn.Module):
+    '''
+    The basic implementation for object context block
+    Input:
+        N X C X H X W
+    Parameters:
+        in_channels       : the dimension of the input feature map
+        key_channels      : the dimension after the key/query transform
+        scale             : choose the scale to downsample the input feature maps (save memory cost)
+        bn_type           : specify the bn type
+    Return:
+        N X C X H X W
+    '''
+    def __init__(self, 
+                 in_channels, 
+                 key_channels, 
+                 scale=1, 
+                 bn_type=None):
+        super(_ObjectAttentionBlock, self).__init__()
+        self.scale = scale
+        self.in_channels = in_channels
+        self.key_channels = key_channels
+        self.pool = nn.MaxPool2d(kernel_size=(scale, scale))
+        self.f_pixel = nn.Sequential(
+            nn.Conv2d(in_channels=self.in_channels, out_channels=self.key_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.key_channels, bn_type=bn_type),
+            nn.Conv2d(in_channels=self.key_channels, out_channels=self.key_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.key_channels, bn_type=bn_type),
+        )
+        self.f_object = nn.Sequential(
+            nn.Conv2d(in_channels=self.in_channels, out_channels=self.key_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.key_channels, bn_type=bn_type),
+            nn.Conv2d(in_channels=self.key_channels, out_channels=self.key_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.key_channels, bn_type=bn_type),
+        )
+        self.f_down = nn.Sequential(
+            nn.Conv2d(in_channels=self.in_channels, out_channels=self.key_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.key_channels, bn_type=bn_type),
+        )
+        self.f_up = nn.Sequential(
+            nn.Conv2d(in_channels=self.key_channels, out_channels=self.in_channels,
+                kernel_size=1, stride=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(self.in_channels, bn_type=bn_type),
+        )
+
+    def forward(self, x, proxy):
+        batch_size, h, w = x.size(0), x.size(2), x.size(3)
+        if self.scale > 1:
+            x = self.pool(x)
+
+        query = self.f_pixel(x).view(batch_size, self.key_channels, -1)
+        query = query.permute(0, 2, 1)
+        key = self.f_object(proxy).view(batch_size, self.key_channels, -1)
+        value = self.f_down(proxy).view(batch_size, self.key_channels, -1)
+        value = value.permute(0, 2, 1)
+
+        sim_map = torch.matmul(query, key)
+        sim_map = (self.key_channels**-.5) * sim_map
+        sim_map = F.softmax(sim_map, dim=-1)   
+
+        # add bg context ...
+        context = torch.matmul(sim_map, value)
+        context = context.permute(0, 2, 1).contiguous()
+        context = context.view(batch_size, self.key_channels, *x.size()[2:])
+        context = self.f_up(context)
+        if self.scale > 1:
+            context = F.interpolate(input=context, size=(h, w), mode='bilinear', align_corners=ALIGN_CORNERS)
+
+        return context
+
+
+class ObjectAttentionBlock2D(_ObjectAttentionBlock):
+    def __init__(self, 
+                 in_channels, 
+                 key_channels, 
+                 scale=1, 
+                 bn_type=None):
+        super(ObjectAttentionBlock2D, self).__init__(in_channels,
+                                                     key_channels,
+                                                     scale, 
+                                                     bn_type=bn_type)
+
+
+class SpatialOCR_Module(nn.Module):
+    """
+    Implementation of the OCR module:
+    We aggregate the global object representation to update the representation for each pixel.
+    """
+    def __init__(self, 
+                 in_channels, 
+                 key_channels, 
+                 out_channels, 
+                 scale=1, 
+                 dropout=0.1, 
+                 bn_type=None):
+        super(SpatialOCR_Module, self).__init__()
+        self.object_context_block = ObjectAttentionBlock2D(in_channels, 
+                                                           key_channels, 
+                                                           scale, 
+                                                           bn_type)
+        _in_channels = 2 * in_channels
+
+        self.conv_bn_dropout = nn.Sequential(
+            nn.Conv2d(_in_channels, out_channels, kernel_size=1, padding=0, bias=False),
+            ModuleHelper.BNReLU(out_channels, bn_type=bn_type),
+            nn.Dropout2d(dropout)
+        )
+
+    def forward(self, feats, proxy_feats):
+        context = self.object_context_block(feats, proxy_feats)
+
+        output = self.conv_bn_dropout(torch.cat([context, feats], 1))
+
+        return output
 
 
 class BasicBlock(nn.Module):
@@ -206,7 +363,7 @@ class HighResolutionModule(nn.Module):
                                 nn.Conv2d(num_inchannels[j],
                                           num_outchannels_conv3x3,
                                           3, 2, 1, bias=False),
-                                BatchNorm2d(num_outchannels_conv3x3, 
+                                BatchNorm2d(num_outchannels_conv3x3,
                                             momentum=BN_MOMENTUM)))
                         else:
                             num_outchannels_conv3x3 = num_inchannels[j]
@@ -257,7 +414,6 @@ blocks_dict = {
     'BOTTLENECK': Bottleneck
 }
 
-
 class HighResolutionNet(nn.Module):
 
     def __init__(self, config, **kwargs):
@@ -267,12 +423,15 @@ class HighResolutionNet(nn.Module):
         ALIGN_CORNERS = config.MODEL.ALIGN_CORNERS
 
         # stem net
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1,
                                bias=False)
         self.bn1 = BatchNorm2d(64, momentum=BN_MOMENTUM)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1,
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1,
                                bias=False)
         self.bn2 = BatchNorm2d(64, momentum=BN_MOMENTUM)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1,
+                               bias=False)
+        self.bn3 = BatchNorm2d(64, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU(inplace=relu_inplace)
 
         self.stage1_cfg = extra['STAGE1']
@@ -311,26 +470,39 @@ class HighResolutionNet(nn.Module):
             pre_stage_channels, num_channels)
         self.stage4, pre_stage_channels = self._make_stage(
             self.stage4_cfg, num_channels, multi_scale_output=True)
-        
-        last_inp_channels = np.int(np.sum(pre_stage_channels))
 
-        self.last_layer = nn.Sequential(
-            nn.Conv2d(
-                in_channels=last_inp_channels,
-                out_channels=last_inp_channels,
-                kernel_size=1,
-                stride=1,
-                padding=0),
-            BatchNorm2d(last_inp_channels, momentum=BN_MOMENTUM),
+        last_inp_channels = np.int(np.sum(pre_stage_channels))
+        ocr_mid_channels = config.MODEL.OCR.MID_CHANNELS
+        ocr_key_channels = config.MODEL.OCR.KEY_CHANNELS
+
+        self.conv3x3_ocr = nn.Sequential(
+            nn.Conv2d(last_inp_channels, ocr_mid_channels,
+                      kernel_size=3, stride=1, padding=1),
+            BatchNorm2d(ocr_mid_channels),
             nn.ReLU(inplace=relu_inplace),
-            nn.Conv2d(
-                in_channels=last_inp_channels,
-                out_channels=config.DATASET.NUM_CLASSES,
-                kernel_size=extra.FINAL_CONV_KERNEL,
-                stride=1,
-                padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0)
+        )
+        self.ocr_gather_head = SpatialGather_Module(config.DATASET.NUM_CLASSES)
+
+        self.ocr_distri_head = SpatialOCR_Module(in_channels=ocr_mid_channels,
+                                                 key_channels=ocr_key_channels,
+                                                 out_channels=ocr_mid_channels,
+                                                 scale=1,
+                                                 dropout=0.05,
+                                                 )
+        self.cls_head = nn.Conv2d(
+            ocr_mid_channels, config.DATASET.NUM_CLASSES, kernel_size=1, stride=1, padding=0, bias=True)
+
+        self.aux_head = nn.Sequential(
+            nn.Conv2d(last_inp_channels, last_inp_channels,
+                      kernel_size=1, stride=1, padding=0),
+            BatchNorm2d(last_inp_channels),
+            nn.ReLU(inplace=relu_inplace),
+            nn.Conv2d(last_inp_channels, config.DATASET.NUM_CLASSES,
+                      kernel_size=1, stride=1, padding=0, bias=True)
         )
 
+        self.point_head = PointHead(512, config.DATASET.NUM_CLASSES)
+        
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
         num_branches_cur = len(num_channels_cur_layer)
@@ -402,12 +574,12 @@ class HighResolutionNet(nn.Module):
                 reset_multi_scale_output = True
             modules.append(
                 HighResolutionModule(num_branches,
-                                      block,
-                                      num_blocks,
-                                      num_inchannels,
-                                      num_channels,
-                                      fuse_method,
-                                      reset_multi_scale_output)
+                                     block,
+                                     num_blocks,
+                                     num_inchannels,
+                                     num_channels,
+                                     fuse_method,
+                                     reset_multi_scale_output)
             )
             num_inchannels = modules[-1].get_num_inchannels()
 
@@ -420,6 +592,8 @@ class HighResolutionNet(nn.Module):
         x = self.conv2(x)
         x = self.bn2(x)
         x = self.relu(x)
+        x = self.conv3(x)
+        x = self.bn3(x)
         x = self.layer1(x)
 
         x_list = []
@@ -454,35 +628,98 @@ class HighResolutionNet(nn.Module):
 
         # Upsampling
         x0_h, x0_w = x[0].size(2), x[0].size(3)
-        x1 = F.interpolate(x[1], size=(x0_h, x0_w), mode='bilinear', align_corners=ALIGN_CORNERS)
-        x2 = F.interpolate(x[2], size=(x0_h, x0_w), mode='bilinear', align_corners=ALIGN_CORNERS)
-        x3 = F.interpolate(x[3], size=(x0_h, x0_w), mode='bilinear', align_corners=ALIGN_CORNERS)
+        x1 = F.interpolate(x[1], size=(x0_h, x0_w),
+                        mode='bilinear', align_corners=ALIGN_CORNERS)
+        x2 = F.interpolate(x[2], size=(x0_h, x0_w),
+                        mode='bilinear', align_corners=ALIGN_CORNERS)
+        x3 = F.interpolate(x[3], size=(x0_h, x0_w),
+                        mode='bilinear', align_corners=ALIGN_CORNERS)
 
-        x = torch.cat([x[0], x1, x2, x3], 1)
+        feats = torch.cat([x[0], x1, x2, x3], 1)
 
-        x = self.last_layer(x)
+        out_aux_seg = []
 
-        return x
+        # ocr
+        out_aux = self.aux_head(feats)
+        # compute contrast feature
+        feats = self.conv3x3_ocr(feats)
+
+        context = self.ocr_gather_head(feats, out_aux)
+        feats = self.ocr_distri_head(feats, context)
+
+        out = self.cls_head(feats)
+
+        out_aux_seg.append(out_aux)
+        out_aux_seg.append(out)
+
+        # PointRend
+        coarse_preds = torch.softmax(out, dim=1)
+        if self.training:
+            with torch.no_grad():
+                point_coords = get_uncertain_point_coords_with_randomness(
+                    coarse_preds,
+                    calculate_uncertainty,
+                    2048,
+                    3,
+                    0.75,
+                )
+            coarse_features = point_sample(out, point_coords, align_corners=False)
+            fine_grained_features = point_sample(feats, point_coords, align_corners=False)
+            point_logits = self.point_head(fine_grained_features, coarse_features)
+
+            return out_aux_seg, point_logits
+        else:
+            upsample_sizes = [[256, 512], [512, 1024], [1024, 2048]]
+            for upsample_size in range(upsample_sizes):
+                coarse_preds = F.interpolate(
+                    coarse_preds, size=tuple(upsample_size), mode="bilinear", align_corners=False
+                )
+                uncertainty_map = calculate_uncertainty(coarse_preds)
+                point_indices, point_coords = get_uncertain_point_coords_on_grid(
+                    uncertainty_map, upsample_size[0] * upsample_size[1] // 16
+                )
+                fine_grained_features = point_sample(feats, point_coords, align_corners=False)
+                coarse_features = point_sample(out, point_coords, align_corners=False)
+                point_logits = self.point_head(fine_grained_features, coarse_features)
+                N, C, H, W = coarse_preds.shape
+                point_indices = point_indices.unsqueeze(1).expand(-1, C, -1)
+                point_preds = torch.softmax(point_logits, dim=1)
+                coarse_preds = (
+                    coarse_preds.reshape(N, C, H * W)
+                    .scatter_(2, point_indices, point_preds)
+                    .view(N, C, H, W)
+                )
+            return coarse_preds
+
 
     def init_weights(self, pretrained='',):
         logger.info('=> init weights from normal distribution')
-        for m in self.modules():
+        for name, m in self.named_modules():
+            if any(part in name for part in {'cls', 'aux', 'ocr'}):
+                # print('skipped', name)
+                continue
             if isinstance(m, nn.Conv2d):
                 nn.init.normal_(m.weight, std=0.001)
             elif isinstance(m, BatchNorm2d_class):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
         if os.path.isfile(pretrained):
-            pretrained_dict = torch.load(pretrained)
+            pretrained_dict = torch.load(pretrained, map_location={'cuda:0': 'cpu'})
             logger.info('=> loading pretrained model {}'.format(pretrained))
-            model_dict = self.state_dict()              
+            model_dict = self.state_dict()
+            pretrained_dict = {k.replace('last_layer', 'aux_head').replace('model.', ''): v for k, v in pretrained_dict.items()}  
+            print(set(model_dict) - set(pretrained_dict))            
+            print(set(pretrained_dict) - set(model_dict))            
             pretrained_dict = {k: v for k, v in pretrained_dict.items()
                                if k in model_dict.keys()}
-            for k, _ in pretrained_dict.items():
-                logger.info(
-                    '=> loading {} pretrained model {}'.format(k, pretrained))
+            # for k, _ in pretrained_dict.items():
+                # logger.info(
+                #     '=> loading {} pretrained model {}'.format(k, pretrained))
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
+        elif pretrained:
+            raise RuntimeError('No such file {}'.format(pretrained))
+
 
 def get_seg_model(cfg, **kwargs):
     model = HighResolutionNet(cfg, **kwargs)

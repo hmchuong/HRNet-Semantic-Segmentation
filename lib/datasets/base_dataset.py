@@ -22,11 +22,12 @@ class BaseDataset(data.Dataset):
                  ignore_label=-1,
                  base_size=2048,
                  crop_size=(512, 1024),
+                 resize=(128,256),
                  downsample_rate=1,
                  scale_factor=16,
                  mean=[0.485, 0.456, 0.406],
                  std=[0.229, 0.224, 0.225]):
-
+        
         self.base_size = base_size
         self.crop_size = crop_size
         self.ignore_label = ignore_label
@@ -35,11 +36,18 @@ class BaseDataset(data.Dataset):
         self.std = std
         self.scale_factor = scale_factor
         self.downsample_rate = 1./downsample_rate
+        self.resize = resize
 
         self.files = []
 
+        self.n_x = 1
+        self.n_y = 1
+        # if crop_size != self.original_size:
+        #     self.n_x = int(self.original_size[1] // crop_size[1])
+        #     self.n_y = int(self.original_size[0] // crop_size[0])
+
     def __len__(self):
-        return len(self.files)
+        return len(self.files) * self.n_x * self.n_y
 
     def input_transform(self, image):
         image = image.astype(np.float32)[:, :, ::-1]
@@ -69,7 +77,7 @@ class BaseDataset(data.Dataset):
         label = self.pad_image(label, h, w, self.crop_size,
                                (self.ignore_label,))
 
-        new_h, new_w = label.shape
+        new_h, new_w = label.shape[0], label.shape[1]
         x = random.randint(0, new_w - self.crop_size[1])
         y = random.randint(0, new_h - self.crop_size[0])
         image = image[y:y+self.crop_size[0], x:x+self.crop_size[1]]
@@ -154,6 +162,7 @@ class BaseDataset(data.Dataset):
 
     def gen_sample(self, image, label,
                    multi_scale=True, is_flip=True):
+                   
         if multi_scale:
             rand_scale = 0.5 + random.randint(0, self.scale_factor) / 10.0
             image, label = self.multi_scale_aug(image, label,
@@ -282,3 +291,22 @@ class BaseDataset(data.Dataset):
             )
             final_pred += preds
         return final_pred
+    
+    def image_resize(self, image, long_size, label=None):
+        h, w = image.shape[:2]
+        if h > w:
+            new_h = long_size
+            new_w = np.int(w * long_size / h + 0.5)
+        else:
+            new_w = long_size
+            new_h = np.int(h * long_size / w + 0.5)
+        
+        image = cv2.resize(image, (new_w, new_h), 
+                           interpolation = cv2.INTER_LINEAR)
+        if label is not None:
+            label = cv2.resize(label, (new_w, new_h), 
+                           interpolation = cv2.INTER_NEAREST)
+        else:
+            return image
+        
+        return image, label

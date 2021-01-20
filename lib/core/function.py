@@ -53,7 +53,6 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
         images, labels, _, _ = batch
         images = images.cuda()
         labels = labels.long().cuda()
-
         losses, _ = model(images, labels)
         loss = losses.mean()
 

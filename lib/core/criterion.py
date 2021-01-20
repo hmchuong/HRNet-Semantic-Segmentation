@@ -27,7 +27,7 @@ class CrossEntropy(nn.Module):
             score = F.interpolate(input=score, size=(
                 h, w), mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS)
 
-        loss = self.criterion(score, target)
+        loss = self.criterion(score.contiguous(), target)
 
         return loss
 

@@ -13,3 +13,7 @@ from .lip import LIP as lip
 from .pascal_ctx import PASCALContext as pascal_ctx
 from .ade20k import ADE20K as ade20k
 from .cocostuff import COCOStuff as cocostuff
+from .deepglobe import DeepGlobe as deepglobe
+from .inria import Inria as inria
+from .gleason import Gleason as gleason
+from .foreground import Foreground as foreground

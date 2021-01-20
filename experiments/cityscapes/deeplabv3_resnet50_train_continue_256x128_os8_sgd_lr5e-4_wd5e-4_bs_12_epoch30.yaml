@@ -1,0 +1,58 @@
+CUDNN:
+  BENCHMARK: true
+  DETERMINISTIC: false
+  ENABLED: false
+GPUS: (0,1)
+OUTPUT_DIR: 'output'
+LOG_DIR: 'log'
+WORKERS: 4
+PRINT_FREQ: 10
+
+DATASET:
+  DATASET: cityscapes
+  ROOT: data/
+  TEST_SET: 'list/cityscapes/val.lst'
+  TRAIN_SET: 'list/cityscapes/train.lst'
+  NUM_CLASSES: 19
+MODEL:
+  NAME: deeplabv3
+  PRETRAINED: /vinai/chuonghm/magnet/HRNet-Semantic-Segmentation/output/cityscapes/deeplabv3_resnet50_train_256x128_os8_sgd_lr1e-2_wd5e-4_bs_12_epoch484/best.pth
+LOSS:
+  USE_OHEM: false
+  OHEMTHRES: 0.9
+  OHEMKEEP: 131072
+  BALANCE_WEIGHTS: [1]
+TRAIN:
+  RESIZE:
+  - 256
+  - 128
+  IMAGE_SIZE:
+  - 256
+  - 128
+  BASE_SIZE: 256
+  BATCH_SIZE_PER_GPU: 176
+  SHUFFLE: true
+  BEGIN_EPOCH: 0
+  END_EPOCH: 30
+  RESUME: true
+  OPTIMIZER: sgd
+  LR: 0.0005
+  WD: 0.0005
+  MOMENTUM: 0.9
+  NESTEROV: false
+  FLIP: true
+  MULTI_SCALE: true
+  DOWNSAMPLERATE: 1
+  IGNORE_LABEL: 255
+  SCALE_FACTOR: 16
+TEST:
+  RESIZE:
+  - 256
+  - 128
+  IMAGE_SIZE:
+  - 256
+  - 128
+  BASE_SIZE: 256
+  BATCH_SIZE_PER_GPU: 176
+  FLIP_TEST: false
+  MULTI_SCALE: false

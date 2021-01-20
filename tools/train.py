@@ -87,7 +87,7 @@ def main():
     cudnn.enabled = config.CUDNN.ENABLED
     gpus = list(config.GPUS)
     distributed = args.local_rank >= 0
-    if distributed:
+    if True:
         device = torch.device('cuda:{}'.format(args.local_rank))    
         torch.cuda.set_device(device)
         torch.distributed.init_process_group(
@@ -128,6 +128,7 @@ def main():
                         ignore_label=config.TRAIN.IGNORE_LABEL,
                         base_size=config.TRAIN.BASE_SIZE,
                         crop_size=crop_size,
+                        resize=(config.TRAIN.RESIZE[1], config.TRAIN.RESIZE[0]),
                         downsample_rate=config.TRAIN.DOWNSAMPLERATE,
                         scale_factor=config.TRAIN.SCALE_FACTOR)
 
@@ -179,12 +180,18 @@ def main():
                         ignore_label=config.TRAIN.IGNORE_LABEL,
                         base_size=config.TEST.BASE_SIZE,
                         crop_size=test_size,
+                        resize=(config.TEST.RESIZE[1], config.TEST.RESIZE[0]),
                         downsample_rate=1)
 
     test_sampler = get_sampler(test_dataset)
+    test_batch_size = 0
+    if distributed:
+        test_batch_size = config.TEST.BATCH_SIZE_PER_GPU
+    else:
+        test_batch_size = config.TEST.BATCH_SIZE_PER_GPU * len(gpus)
     testloader = torch.utils.data.DataLoader(
         test_dataset,
-        batch_size=batch_size,
+        batch_size=test_batch_size,
         shuffle=False,
         num_workers=config.WORKERS,
         pin_memory=True,
