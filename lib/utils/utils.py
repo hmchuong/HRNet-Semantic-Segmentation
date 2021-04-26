@@ -35,6 +35,21 @@ class FullModel(nn.Module):
     loss = self.loss(outputs, labels)
     return torch.unsqueeze(loss,0), outputs
 
+class CascadeModel(nn.Module):
+    def __init__(self, model, loss, weights=None):
+        super(CascadeFusionModel, self).__init__()
+        self.model = model
+        self.loss = loss
+        self.weights = weights
+    
+    def forward(self, inputs, labels):
+        outputs = self.model(inputs)
+        loss = 0
+        for output, combine_weight in zip(outputs, self.weights):
+            loss = loss + combine_weight * self.loss(output, labels)
+        return torch.unsqueeze(loss, 0), outputs[-1]
+
+
 def get_world_size():
     if not torch.distributed.is_initialized():
         return 1

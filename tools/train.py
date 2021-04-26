@@ -32,7 +32,7 @@ from config import update_config
 from core.criterion import CrossEntropy, OhemCrossEntropy
 from core.function import train, validate
 from utils.modelsummary import get_model_summary
-from utils.utils import create_logger, FullModel, get_rank
+from utils.utils import create_logger, FullModel, CascadeModel, get_rank
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train segmentation network')
@@ -76,8 +76,15 @@ def main():
     device = torch.device('cuda:{}'.format(args.local_rank))
 
     # build model
-    model = eval('models.'+config.MODEL.NAME +
-                 '.get_seg_model')(config)
+    if "cascade" in config.MODEL.NAME:
+        backbone_name, addtional_module_name = config.MODEL.NAME.split("+")
+        backbone = eval('models.'+ backbone_name +
+                    '.get_seg_model')(config)
+        model = eval('models.'+ addtional_module_name +
+                    '.get_seg_model')(config, backbone)
+    else:
+        model = eval('models.'+config.MODEL.NAME +
+                    '.get_seg_model')(config)
 
     if args.local_rank == 0:
         # provide the summary of model
@@ -192,8 +199,10 @@ def main():
     else:
         criterion = CrossEntropy(ignore_label=config.TRAIN.IGNORE_LABEL,
                                  weight=train_dataset.class_weights)
-
-    model = FullModel(model, criterion)
+    if "cascade" in config.MODEL.NAME:
+        model = CascadeModel(model, criterion)
+    else:
+        model = FullModel(model, criterion)
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model = model.to(device)
     model = nn.parallel.DistributedDataParallel(

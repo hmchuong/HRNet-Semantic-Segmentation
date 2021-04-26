@@ -13,7 +13,7 @@ class CrossEntropy(nn.Module):
         super(CrossEntropy, self).__init__()
         self.ignore_label = ignore_label
         self.criterion = nn.CrossEntropyLoss(weight=weight, 
-                                             ignore_index=ignore_label)
+                                             ignore_index=ignore_label, reduction='none')
 
     def forward(self, score, target):
         ph, pw = score.size(2), score.size(3)
@@ -24,7 +24,7 @@ class CrossEntropy(nn.Module):
 
         loss = self.criterion(score, target)
 
-        return loss
+        return loss.mean()
 
 class OhemCrossEntropy(nn.Module): 
     def __init__(self, ignore_label=-1, thres=0.7, 

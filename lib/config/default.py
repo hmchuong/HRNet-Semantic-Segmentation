@@ -33,8 +33,9 @@ _C.CUDNN.ENABLED = True
 
 # common params for NETWORK
 _C.MODEL = CN()
-_C.MODEL.NAME = 'seg_hrnet'
+_C.MODEL.NAME = 'seg_hrnet_cf'
 _C.MODEL.PRETRAINED = ''
+_C.MODEL.ADDITION = CN(new_allowed=True)
 _C.MODEL.EXTRA = CN(new_allowed=True)
 
 _C.LOSS = CN()

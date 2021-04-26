@@ -408,7 +408,7 @@ class HighResolutionNet(nn.Module):
 
         return nn.Sequential(*modules), num_inchannels
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -440,6 +440,9 @@ class HighResolutionNet(nn.Module):
             else:
                 x_list.append(y_list[i])
         x = self.stage4(x_list)
+
+        if return_features:
+            return x[::-1]
 
         # Upsampling
         x0_h, x0_w = x[0].size(2), x[0].size(3)
