@@ -169,8 +169,8 @@ class Cityscapes(BaseDataset):
                         count[:,:,h0:h1,w0:w1] += 1
                 preds = preds / count
                 preds = preds[:,:,:height,:width]
-            preds = F.upsample(preds, (ori_height, ori_width), 
-                                   mode='bilinear')
+            preds = F.interpolate(preds, (ori_height, ori_width), 
+                                   mode='bilinear', align_corners=False)
             final_pred += preds
         return final_pred
 

@@ -1,3 +1,5 @@
+import os
+
 import torch.nn as nn
 import torch.nn.functional as F
 from .seg_hrnet import BatchNorm2d, BN_MOMENTUM
@@ -5,11 +7,12 @@ from utils.certainty import calculate_certainty
 
 class CascadeAttention(nn.Module):
     def __init__(self, config, backbone, **kwargs):
+        super(CascadeAttention, self).__init__()
         self.backbone = backbone
         convs = []
         heads = []
         for in_feature in config.MODEL.ATTENTION.IN_FEATURES:
-            convs = [nn.Conv2d(in_channels=in_feature,
+            convs += [nn.Conv2d(in_channels=in_feature,
                             out_channels=config.MODEL.ATTENTION.INTER_CHANNEL,
                             kernel_size=1,
                             stride=1,
@@ -17,7 +20,7 @@ class CascadeAttention(nn.Module):
             heads += [nn.Sequential(BatchNorm2d(config.MODEL.ATTENTION.INTER_CHANNEL, momentum=BN_MOMENTUM),
                                     nn.ReLU(inplace=True),
                                     nn.Conv2d(
-                                        in_channels=config.MODEL.ATTENTION.INTER_CHANNELS,
+                                        in_channels=config.MODEL.ATTENTION.INTER_CHANNEL,
                                         out_channels=config.DATASET.NUM_CLASSES,
                                         kernel_size=config.MODEL.EXTRA.FINAL_CONV_KERNEL,
                                         stride=1,
@@ -25,8 +28,10 @@ class CascadeAttention(nn.Module):
         self.convs = nn.ModuleList(convs)
         self.heads = nn.ModuleList(heads)
 
+        self.backbone.init_weights(config.MODEL.ATTENTION.PRETRAINED)
+
     def forward(self, x):
-        features = self.backbone
+        features = self.backbone(x)
         previous_feature, uncertainty_score = None, None
         outputs = []
         for conv, head, feature in zip(self.convs, self.heads, features):
@@ -35,9 +40,10 @@ class CascadeAttention(nn.Module):
             
             # Aggregation
             if uncertainty_score is not None:
-                certainty_score = 1.0 - uncertainty_score
+                
                 uncertainty_score = F.interpolate(uncertainty_score, size=(feature.shape[2], feature.shape[3]), mode='bilinear', align_corners=False)
-
+                certainty_score = 1.0 - uncertainty_score
+                previous_feature = F.interpolate(previous_feature, size=(feature.shape[2], feature.shape[3]), mode='bilinear', align_corners=False)
                 feature = feature * uncertainty_score + certainty_score * previous_feature
             previous_feature = feature
 
@@ -51,7 +57,7 @@ class CascadeAttention(nn.Module):
         return outputs
     
     def init_weights(self, pretrained='',):
-        logger.info('=> init weights from normal distribution')
+        print('=> init weights from normal distribution')
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.normal_(m.weight, std=0.001)
@@ -60,7 +66,7 @@ class CascadeAttention(nn.Module):
                 nn.init.constant_(m.bias, 0)
         if os.path.isfile(pretrained):
             pretrained_dict = torch.load(pretrained)
-            logger.info('=> loading pretrained model {}'.format(pretrained))
+            print('=> loading pretrained model {}'.format(pretrained))
             model_dict = self.state_dict()
             pretrained_dict = {k: v for k, v in pretrained_dict.items()
                                if k in model_dict.keys()}
@@ -70,8 +76,8 @@ class CascadeAttention(nn.Module):
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
     
-def get_seg_model(cfg, **kwargs):
-    model = CascadeAttention(config, backbone, **kwargs)
+def get_seg_model(cfg, backbone, **kwargs):
+    model = CascadeAttention(cfg, backbone, **kwargs)
     model.init_weights(cfg.MODEL.PRETRAINED)
 
     return model

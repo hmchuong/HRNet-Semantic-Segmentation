@@ -149,15 +149,15 @@ class BaseDataset(data.Dataset):
     def inference(self, model, image, flip=False):
         size = image.size()
         pred = model(image)
-        pred = F.upsample(input=pred, 
+        pred = F.interpolate(input=pred, 
                             size=(size[-2], size[-1]), 
-                            mode='bilinear')        
+                            mode='bilinear', align_corners=False)        
         if flip:
             flip_img = image.numpy()[:,:,:,::-1]
             flip_output = model(torch.from_numpy(flip_img.copy()))
-            flip_output = F.upsample(input=flip_output, 
+            flip_output = F.interpolate(input=flip_output, 
                             size=(size[-2], size[-1]), 
-                            mode='bilinear')
+                            mode='bilinear', align_corners=False)
             flip_pred = flip_output.cpu().numpy().copy()
             flip_pred = torch.from_numpy(flip_pred[:,:,:,::-1].copy()).cuda()
             pred += flip_pred
@@ -223,7 +223,7 @@ class BaseDataset(data.Dataset):
                         count[:,:,h0:h1,w0:w1] += 1
                 preds = preds / count
                 preds = preds[:,:,:height,:width]
-            preds = F.upsample(preds, (ori_height, ori_width), 
-                                   mode='bilinear')
+            preds = F.interpolate(preds, (ori_height, ori_width), 
+                                   mode='bilinear', align_corners=False)
             final_pred += preds
         return final_pred

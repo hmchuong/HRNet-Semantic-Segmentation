@@ -103,8 +103,8 @@ def validate(config, testloader, model, writer_dict, device):
             label = label.long().to(device)
 
             losses, pred = model(image, label)
-            pred = F.upsample(input=pred, size=(
-                        size[-2], size[-1]), mode='bilinear')
+            pred = F.interpolate(input=pred, size=(
+                        size[-2], size[-1]), mode='bilinear', align_corners=False)
             loss = losses.mean()
             reduced_loss = reduce_tensor(loss)
             ave_loss.update(reduced_loss.item())
@@ -152,8 +152,8 @@ def testval(config, test_dataset, testloader, model,
                         flip=config.TEST.FLIP_TEST)
             
             if pred.size()[-2] != size[-2] or pred.size()[-1] != size[-1]:
-                pred = F.upsample(pred, (size[-2], size[-1]), 
-                                   mode='bilinear')
+                pred = F.interpolate(pred, (size[-2], size[-1]), 
+                                   mode='bilinear', align_corners=False)
 
             confusion_matrix += get_confusion_matrix(
                 label,
@@ -201,8 +201,8 @@ def test(config, test_dataset, testloader, model,
                         flip=config.TEST.FLIP_TEST)
             
             if pred.size()[-2] != size[0] or pred.size()[-1] != size[1]:
-                pred = F.upsample(pred, (size[-2], size[-1]), 
-                                   mode='bilinear')
+                pred = F.interpolate(pred, (size[-2], size[-1]), 
+                                   mode='bilinear', align_corners=False)
 
             if sv_pred:
                 sv_path = os.path.join(sv_dir,'test_results')

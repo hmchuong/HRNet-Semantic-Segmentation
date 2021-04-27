@@ -1,2 +1,7 @@
 .vscode
 data/cityscapes/
+pretrained
+log/
+*.pyc
+output/
+*.tar.gz

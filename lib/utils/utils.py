@@ -37,7 +37,7 @@ class FullModel(nn.Module):
 
 class CascadeModel(nn.Module):
     def __init__(self, model, loss, weights=None):
-        super(CascadeFusionModel, self).__init__()
+        super(CascadeModel, self).__init__()
         self.model = model
         self.loss = loss
         self.weights = weights

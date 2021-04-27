@@ -241,7 +241,7 @@ class HighResolutionModule(nn.Module):
                     y = y + F.interpolate(
                         self.fuse_layers[i][j](x[j]),
                         size=[height_output, width_output],
-                        mode='bilinear')
+                        mode='bilinear', align_corners=False)
                 else:
                     y = y + self.fuse_layers[i][j](x[j])
             x_fuse.append(self.relu(y))
@@ -257,7 +257,7 @@ blocks_dict = {
 
 class HighResolutionNet(nn.Module):
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config, include_head=True, **kwargs):
         extra = config.MODEL.EXTRA
         super(HighResolutionNet, self).__init__()
 
@@ -308,23 +308,24 @@ class HighResolutionNet(nn.Module):
             self.stage4_cfg, num_channels, multi_scale_output=True)
         
         last_inp_channels = np.int(np.sum(pre_stage_channels))
-
-        self.last_layer = nn.Sequential(
-            nn.Conv2d(
-                in_channels=last_inp_channels,
-                out_channels=last_inp_channels,
-                kernel_size=1,
-                stride=1,
-                padding=0),
-            BatchNorm2d(last_inp_channels, momentum=BN_MOMENTUM),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(
-                in_channels=last_inp_channels,
-                out_channels=config.DATASET.NUM_CLASSES,
-                kernel_size=extra.FINAL_CONV_KERNEL,
-                stride=1,
-                padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0)
-        )
+        self.include_head = include_head
+        if not include_head:
+            self.last_layer = nn.Sequential(
+                nn.Conv2d(
+                    in_channels=last_inp_channels,
+                    out_channels=last_inp_channels,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0),
+                BatchNorm2d(last_inp_channels, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(
+                    in_channels=last_inp_channels,
+                    out_channels=config.DATASET.NUM_CLASSES,
+                    kernel_size=extra.FINAL_CONV_KERNEL,
+                    stride=1,
+                    padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0)
+            )
 
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
@@ -408,7 +409,7 @@ class HighResolutionNet(nn.Module):
 
         return nn.Sequential(*modules), num_inchannels
 
-    def forward(self, x, return_features=False):
+    def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -441,14 +442,14 @@ class HighResolutionNet(nn.Module):
                 x_list.append(y_list[i])
         x = self.stage4(x_list)
 
-        if return_features:
+        if not self.include_head:
             return x[::-1]
 
         # Upsampling
         x0_h, x0_w = x[0].size(2), x[0].size(3)
-        x1 = F.upsample(x[1], size=(x0_h, x0_w), mode='bilinear')
-        x2 = F.upsample(x[2], size=(x0_h, x0_w), mode='bilinear')
-        x3 = F.upsample(x[3], size=(x0_h, x0_w), mode='bilinear')
+        x1 = F.interpolate(x[1], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x2 = F.interpolate(x[2], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x3 = F.interpolate(x[3], size=(x0_h, x0_w), mode='bilinear', align_corners=False)
 
         x = torch.cat([x[0], x1, x2, x3], 1)
 
