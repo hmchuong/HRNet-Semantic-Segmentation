@@ -11,8 +11,8 @@ PRINT_FREQ: 100
 DATASET:
   DATASET: cityscapes
   ROOT: 'data/'
-  TEST_SET: 'list/cityscapes/val_small.lst'
-  TRAIN_SET: 'list/cityscapes/train_small.lst'
+  TEST_SET: 'list/cityscapes/val.lst'
+  TRAIN_SET: 'list/cityscapes/train.lst'
   NUM_CLASSES: 19
 MODEL:
   NAME: seg_hrnet+cascade_fusion
