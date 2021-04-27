@@ -6,22 +6,22 @@ from .cascade_attention import CascadeAttention
 
 class CascadeFusion(CascadeAttention):
     def __init__(self, config, backbone, **kwargs):
-        super(CascadeFusion, self).__init__(backbone, config)
+        super(CascadeFusion, self).__init__(config, backbone)
         self.refinement_points = config.MODEL.ATTENTION.POINTS
 
     def forward(self, x):
-        features = self.backbone
+        features = self.backbone(x)
         final_logits, previous_feature, uncertainty_score = None, None, None
         outputs = []
-        for conv, head, feature, n_points in zip(self.heads, features, self.refinement_points):
+        for conv, head, feature, n_points in zip(self.convs, self.heads, features, self.refinement_points):
             
             feature = conv(feature)
 
             # Aggregation
             if uncertainty_score is not None:
-                certainty_score = 1.0 - uncertainty_score
                 uncertainty_score = F.interpolate(uncertainty_score, size=(feature.shape[2], feature.shape[3]), mode='bilinear', align_corners=False)
-
+                certainty_score = 1.0 - uncertainty_score
+                previous_feature = F.interpolate(previous_feature, size=(feature.shape[2], feature.shape[3]), mode='bilinear', align_corners=False)
                 feature = feature * uncertainty_score + certainty_score * previous_feature
 
             previous_feature = feature
