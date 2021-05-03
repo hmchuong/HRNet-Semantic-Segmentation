@@ -474,7 +474,6 @@ class HighResolutionNet(nn.Module):
             #for k, _ in pretrained_dict.items():
             #    logger.info(
             #        '=> loading {} pretrained model {}'.format(k, pretrained))
-            import pdb; pdb.set_trace()
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
 
