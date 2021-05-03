@@ -1,5 +1,6 @@
 import os
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .seg_hrnet import BatchNorm2d, BN_MOMENTUM

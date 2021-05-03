@@ -149,6 +149,8 @@ class BaseDataset(data.Dataset):
     def inference(self, model, image, flip=False):
         size = image.size()
         pred = model(image)
+        if isinstance(pred, list):
+            pred = pred[-1]
         pred = F.interpolate(input=pred, 
                             size=(size[-2], size[-1]), 
                             mode='bilinear', align_corners=False)        

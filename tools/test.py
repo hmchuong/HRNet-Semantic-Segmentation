@@ -62,8 +62,15 @@ def main():
     cudnn.enabled = config.CUDNN.ENABLED
 
     # build model
-    model = eval('models.'+config.MODEL.NAME +
-                 '.get_seg_model')(config)
+    if "cascade" in config.MODEL.NAME:
+        backbone_name, addtional_module_name = config.MODEL.NAME.split("+")
+        backbone = eval('models.'+ backbone_name +
+                    '.get_seg_model')(config, include_head=False)
+        model = eval('models.'+ addtional_module_name +
+                    '.get_seg_model')(config, backbone)
+    else:
+        model = eval('models.'+config.MODEL.NAME +
+                    '.get_seg_model')(config)
 
     dump_input = torch.rand(
         (1, 3, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
@@ -81,6 +88,7 @@ def main():
     model_dict = model.state_dict()
     pretrained_dict = {k[6:]: v for k, v in pretrained_dict.items()
                         if k[6:] in model_dict.keys()}
+    # model.init_weights(model_state_file)
     for k, _ in pretrained_dict.items():
         logger.info(
             '=> loading {} from pretrained model'.format(k))
@@ -116,7 +124,7 @@ def main():
         mean_IoU, IoU_array, pixel_acc, mean_acc = testval(config, 
                                                            test_dataset, 
                                                            testloader, 
-                                                           model)
+                                                           model, sv_dir=final_output_dir, sv_pred=False)
     
         msg = 'MeanIU: {: 4.4f}, Pixel_Acc: {: 4.4f}, \
             Mean_Acc: {: 4.4f}, Class IoU: '.format(mean_IoU, 
