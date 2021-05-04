@@ -9,10 +9,11 @@ class CascadeFusion(CascadeAttention):
         super(CascadeFusion, self).__init__(config, backbone)
         self.refinement_points = config.MODEL.ATTENTION.POINTS
 
-    def forward(self, x):
+    def forward(self, x, return_attention=False):
         features = self.backbone(x)
         final_logits, previous_feature, uncertainty_score = None, None, None
         outputs = []
+        attention = []
         for conv, head, feature, n_points in zip(self.convs, self.heads, features, self.refinement_points):
             
             feature = conv(feature)
@@ -62,8 +63,11 @@ class CascadeFusion(CascadeAttention):
 
             # Calculate uncertainty
             uncertainty_score = 1.0 - calculate_certainty(final_logits.softmax(1))
-            
+            attention += [uncertainty_score]
+        
         outputs += [final_logits]
+        if return_attention:
+            return outputs, attention
         return outputs
     
 def get_seg_model(cfg, backbone, **kwargs):

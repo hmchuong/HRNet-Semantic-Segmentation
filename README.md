@@ -152,7 +152,15 @@ python tools/test.py --cfg experiments/cityscapes/seg_hrnet_w18_small_v2_cascade
                      DATASET.TEST_SET list/cityscapes/val.lst \
                      TEST.MODEL_FILE /vinai/chuonghm/cascade_attention/output/cityscapes/seg_hrnet_w18_small_v2_cascade_attention_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484/best.pth
 
+python tools/debug_visualize.py --cfg experiments/cityscapes/seg_hrnet_w18_small_v2_cascade_attention_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484.yaml \
+                     DATASET.TEST_SET list/cityscapes/val.lst \
+                     TEST.MODEL_FILE /vinai/chuonghm/cascade_attention/output/cityscapes/seg_hrnet_w18_small_v2_cascade_attention_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484/best.pth
+
 CUDA_VISIBLE_DEVICES=1 python tools/test.py --cfg experiments/cityscapes/seg_hrnet_w18_small_v2_cascade_fusion_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484.yaml \
+                     DATASET.TEST_SET list/cityscapes/val.lst \
+                     TEST.MODEL_FILE /vinai/chuonghm/cascade_attention/output/cityscapes/seg_hrnet_w18_small_v2_cascade_fusion_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484/best.pth
+
+CUDA_VISIBLE_DEVICES=1 python tools/debug_visualize.py --cfg experiments/cityscapes/seg_hrnet_w18_small_v2_cascade_fusion_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484.yaml \
                      DATASET.TEST_SET list/cityscapes/val.lst \
                      TEST.MODEL_FILE /vinai/chuonghm/cascade_attention/output/cityscapes/seg_hrnet_w18_small_v2_cascade_fusion_512x1024_sgd_lr1e-2_wd5e-4_bs_12_epoch484/best.pth
 ````

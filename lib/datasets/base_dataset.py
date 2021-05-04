@@ -45,6 +45,14 @@ class BaseDataset(data.Dataset):
         image /= self.std
         return image
     
+    def inverse_transform(self, image_tensor):
+        image = image_tensor.to("cpu").numpy().transpose((1,2,0))
+        image *= self.std
+        image += self.mean
+        image = image * 255
+        image = image.astype(np.uint8)[:, :, ::-1]
+        return image
+    
     def label_transform(self, label):
         return np.array(label).astype('int32')
 

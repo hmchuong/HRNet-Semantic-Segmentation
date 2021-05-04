@@ -31,10 +31,11 @@ class CascadeAttention(nn.Module):
 
         self.backbone.init_weights(config.MODEL.ATTENTION.PRETRAINED)
 
-    def forward(self, x):
+    def forward(self, x, return_attention=False):
         features = self.backbone(x)
         previous_feature, uncertainty_score = None, None
         outputs = []
+        attention = []
         for conv, head, feature in zip(self.convs, self.heads, features):
             
             feature = conv(feature)
@@ -54,7 +55,10 @@ class CascadeAttention(nn.Module):
 
             pred = logits.softmax(1)
             uncertainty_score = 1.0 - calculate_certainty(pred)
-        
+            attention += [uncertainty_score]
+
+        if return_attention:
+            return outputs, attention
         return outputs
     
     def init_weights(self, pretrained='',):

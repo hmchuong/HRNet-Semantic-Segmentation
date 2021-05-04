@@ -14,8 +14,14 @@ def calculate_certainty(seg_probs):
         torch.Tensor: B x 1 x H x W
             uncertainty of input probability
     """
-    top2_scores = torch.topk(seg_probs, k=2, dim=1)[0]
+    top2_scores, indices = torch.topk(seg_probs, k=2, dim=1)
     res = (top2_scores[:, 0] - top2_scores[:, 1]).unsqueeze(1)
+    # import pdb; pdb.set_trace()
+    # res[torch.logical_and(res > 0.0, res < 0.5)] = 0.5
+    # res = torch.clamp(res, 0.2, 0.8)
+    res = (res - res.min()) / (res.max() - res.min())
+    res = res * 0.3
+    res = res + 0.5
     return res
 
 

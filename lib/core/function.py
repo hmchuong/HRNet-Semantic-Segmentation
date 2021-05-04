@@ -12,6 +12,8 @@ import numpy as np
 import numpy.ma as ma
 from tqdm import tqdm
 
+import cv2
+
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -209,3 +211,32 @@ def test(config, test_dataset, testloader, model,
                 if not os.path.exists(sv_path):
                     os.mkdir(sv_path)
                 test_dataset.save_pred(pred, sv_path, name)
+
+def debug_visualization(config, test_dataset, testloader, model, 
+        sv_dir='', sv_pred=True):
+    model.eval()
+    with torch.no_grad():
+        for _, batch in enumerate(tqdm(testloader)):
+            image, size, _, name = batch
+            size = size[0]
+            preds, attention = model(image, return_attention=True)
+
+            if sv_pred:
+                sv_path = os.path.join(sv_dir,'test_results', name[0])
+                os.makedirs(sv_path, exist_ok=True)
+                # Get image
+                orig_image = test_dataset.inverse_transform(image[0])
+                import pdb; pdb.set_trace()
+                cv2.imwrite(os.path.join(sv_path, "image.png"), orig_image)
+                # Save preds
+                for i, pred in enumerate(preds):
+                    pred = test_dataset.gen_pred(pred[0])
+                    pred = cv2.resize(pred, orig_image.shape[:2][::-1])
+                    # combine = (orig_image * 0.6 + pred * 0.4).astype('uint8')
+                    cv2.imwrite(os.path.join(sv_path, "pred_{}.png".format(i)), pred)
+
+                # Save attention
+                for i, atten in enumerate(attention):
+                    atten = (atten[0, 0].to("cpu").numpy() * 255).astype('uint8')
+                    atten = cv2.resize(atten, orig_image.shape[:2][::-1])
+                    cv2.imwrite(os.path.join(sv_path, "atten_{}.png".format(i)), atten)

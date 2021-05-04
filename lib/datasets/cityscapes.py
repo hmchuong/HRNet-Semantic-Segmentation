@@ -199,6 +199,47 @@ class Cityscapes(BaseDataset):
             save_img = Image.fromarray(pred)
             save_img.putpalette(palette)
             save_img.save(os.path.join(sv_path, name[i]+'.png'))
+    
+    def class2bgr(self, label):
+        """Convert class matrix to BGR image
+        Args:
+            label (np.array): h x w
+                class matrix
+        Returns:
+            np.array: h x w x 3
+                BGR image
+        """
+        label2color = {
+            0: (128, 64, 128),
+            1: (244, 35, 232),
+            2: (70, 70, 70),
+            3: (102, 102, 156),
+            4: (190, 153, 153),
+            5: (153, 153, 153),
+            6: (250, 170, 30),
+            7: (220, 220, 0),
+            8: (107, 142, 35),
+            9: (152, 251, 152),
+            10: (70, 130, 180),
+            11: (220, 20, 60),
+            12: (255, 0, 0),
+            13: (0, 0, 142),
+            14: (0, 0, 70),
+            15: (0, 60, 100),
+            16: (0, 80, 100),
+            17: (0, 0, 230),
+            18: (119, 11, 32),
+        }
+        l, w = label.shape[0], label.shape[1]
+        bgr = np.zeros(shape=(l, w, 3)).astype(np.uint8)
+        for classnum, color in label2color.items():
+            indices = np.where(label == classnum)
+            bgr[indices[0].tolist(), indices[1].tolist(), :] = color[::-1]
+        return bgr
 
+    def gen_pred(self, pred):
+        pred = pred.cpu().numpy().copy()
+        pred = np.asarray(np.argmax(pred, axis=0), dtype=np.uint8)
+        return self.class2bgr(pred)
         
         
