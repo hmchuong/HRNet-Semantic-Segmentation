@@ -76,7 +76,7 @@ def main():
     device = torch.device('cuda:{}'.format(args.local_rank))
 
     # build model
-    if "cascade" in config.MODEL.NAME:
+    if "cascade" in config.MODEL.NAME or "ms_attention" in config.MODEL.NAME:
         backbone_name, addtional_module_name = config.MODEL.NAME.split("+")
         backbone = eval('models.'+ backbone_name +
                     '.get_seg_model')(config, include_head=False)
@@ -199,7 +199,7 @@ def main():
     else:
         criterion = CrossEntropy(ignore_label=config.TRAIN.IGNORE_LABEL,
                                  weight=train_dataset.class_weights)
-    if "cascade" in config.MODEL.NAME:
+    if "cascade" in config.MODEL.NAME or "ms_attention" in config.MODEL.NAME:
         model = CascadeModel(model, criterion, weights=config.MODEL.ATTENTION.COMBINE_WEIGHTS)
     else:
         model = FullModel(model, criterion)
